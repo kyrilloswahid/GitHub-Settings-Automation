@@ -20,7 +20,6 @@ HDR=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+j
 api() { curl -sS "${HDR[@]}" "$@"; }
 status() { curl -s -o /dev/null -w "%{http_code}" "${HDR[@]}" "$@"; }
 
-# ---- Team discovery (no prompts) ----
 get_all_teams() {
   local page=1 out="[]"
   while :; do

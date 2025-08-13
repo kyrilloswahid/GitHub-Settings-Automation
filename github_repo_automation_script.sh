@@ -1,59 +1,136 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# ===== Prompt for Inputs =====
-read -p "Enter GitHub base URL: " GITHUB_URL
-read -p "Enter GitHub Access Token: " GITHUB_TOKEN
+need() { command -v "$1" >/dev/null 2>&1 || { echo "Missing $1"; exit 1; }; }
+need curl; need jq
 
-PREFIX="uh-"
-ORG="UCC-Hub"
+echo "GitHub Org Settings Automation"
+echo "--------------------------------"
 
-# ===== Function to Apply Settings to a Repository ====t
-apply_settings() {
-    local repo=$1
-    echo "Applying settings to $repo ..."
+read -rp "GitHub API base (default https://api.github.com): " GH_API
+GH_API=${GH_API:-https://api.github.com}
+read -rp "Organization name (e.g., ucc-test-org): " ORG
+read -rp "Repo name prefix to target (e.g., uh-): " PREFIX
+read -rsp "GitHub Personal Access Token: " GH_TOKEN; echo
+read -rp "Bot GitHub username (e.g., Cloud-Platforms-DevOps-Bot): " BOT_USER
 
-    # 1. Create development branch
-    curl -s -X POST \
-        -H "Authorization: token $GITHUB_TOKEN" \
-        "$GITHUB_URL/repos/$ORG/$repo/git/refs" \
-        -d '{"ref": "refs/heads/development", "sha": "'$(curl -s -H "Authorization: token $GITHUB_TOKEN" $GITHUB_URL/repos/$ORG/$repo/git/refs/heads/master | jq -r .object.sha)'"}'
+# Optional: set before running (e.g., export REQUIRED_CHECK_NAME=build)
+REQUIRED_CHECK_NAME="${REQUIRED_CHECK_NAME:-}"
 
-    # 2. Add Cloud Platforms DevOps Bot as member
-    curl -s -X PUT \
-        -H "Authorization: token $GITHUB_TOKEN" \
-        "$GITHUB_URL/repos/$ORG/$repo/collaborators/Cloud-Platforms-DevOps-Bot" \
-        -d '{"permission": "push"}'
+HDR=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "Content-Type: application/json")
+api() { curl -sS "${HDR[@]}" "$@"; }
+status() { curl -s -o /dev/null -w "%{http_code}" "${HDR[@]}" "$@"; }
 
-    # 3. Protect master branch
-    curl -s -X PUT \
-        -H "Authorization: token $GITHUB_TOKEN" \
-        "$GITHUB_URL/repos/$ORG/$repo/branches/master/protection" \
-        -d '{"required_pull_request_reviews":{"required_approving_review_count":2}, "restrictions":{"users":[],"teams":["Developers","Maintainers","Instance-Admins","Cloud Platforms DevOps Bot"]}}'
-
-    # 4. Protect development branch
-    curl -s -X PUT \
-        -H "Authorization: token $GITHUB_TOKEN" \
-        "$GITHUB_URL/repos/$ORG/$repo/branches/development/protection" \
-        -d '{"required_pull_request_reviews":{"required_approving_review_count":1}, "restrictions":{"users":[],"teams":["Developers","Maintainers","Instance-Admins","Cloud Platforms DevOps Bot"]}}'
-
-    # 5. Apply project settings equivalent to GitLab JSON
-    curl -s -X PATCH \
-        -H "Authorization: token $GITHUB_TOKEN" \
-        "$GITHUB_URL/repos/$ORG/$repo" \
-        -d '{
-            "has_issues": true,
-            "has_projects": true,
-            "allow_merge_commit": false,
-            "allow_squash_merge": true,
-            "allow_rebase_merge": true
-        }'
+# ---- Team discovery (no prompts) ----
+get_all_teams() {
+  local page=1 out="[]"
+  while :; do
+    local chunk
+    chunk=$(api "${GH_API}/orgs/${ORG}/teams?per_page=100&page=${page}")
+    [[ "$(jq 'length' <<<"$chunk")" == "0" ]] && break
+    out=$(jq -s 'add' <(echo "$out") <(echo "$chunk"))
+    page=$((page+1))
+  done
+  echo "$out"
+}
+resolve_slug() {
+  local teams="$1" want="$2"
+  jq -r --arg w "$want" '
+    map(select(
+      (.name|ascii_downcase)==($w|ascii_downcase) or
+      (.slug|ascii_downcase)==($w|ascii_downcase)
+    )) | .[0].slug // empty' <<<"$teams"
 }
 
-# ===== Main Execution =====
-repos=$(curl -s -H "Authorization: token $GITHUB_TOKEN" "$GITHUB_URL/orgs/$ORG/repos" | jq -r ".[].name" | grep "^$PREFIX")
+ALL_TEAMS_JSON="$(get_all_teams)"
+DEV_TEAM="$(resolve_slug "$ALL_TEAMS_JSON" "Developers")"; [[ -z "$DEV_TEAM" ]] && DEV_TEAM="$(resolve_slug "$ALL_TEAMS_JSON" "developers")"
+MAINTAINERS_TEAM="$(resolve_slug "$ALL_TEAMS_JSON" "Maintainers")"; [[ -z "$MAINTAINERS_TEAM" ]] && MAINTAINERS_TEAM="$(resolve_slug "$ALL_TEAMS_JSON" "maintainers")"
+ADMINS_TEAM="$(resolve_slug "$ALL_TEAMS_JSON" "Instance Admins")"; [[ -z "$ADMINS_TEAM" ]] && ADMINS_TEAM="$(resolve_slug "$ALL_TEAMS_JSON" "instance-admins")"
 
-for repo in $repos; do
-    apply_settings "$repo"
+for pair in "Developers:$DEV_TEAM" "Maintainers:$MAINTAINERS_TEAM" "Instance Admins:$ADMINS_TEAM"; do
+  key="${pair%%:*}"; val="${pair#*:}"
+  if [[ -z "$val" ]]; then
+    echo "ERROR: Missing team \"$key\" in org \"$ORG\"."
+    jq -r '.[] | "- " + .name + " (slug: " + .slug + ")"' <<<"$ALL_TEAMS_JSON"
+    exit 1
+  fi
 done
 
-echo "All settings applied to repositories with prefix '$PREFIX'."
+echo "Teams detected:"
+echo " - Developers       -> $DEV_TEAM"
+echo " - Maintainers      -> $MAINTAINERS_TEAM"
+echo " - Instance Admins  -> $ADMINS_TEAM"
+[[ -n "$REQUIRED_CHECK_NAME" ]] && echo "Required CI check: $REQUIRED_CHECK_NAME" || echo "Required CI check: (none)"
+
+list_repos() {
+  api "${GH_API}/orgs/${ORG}/repos?per_page=100&type=all" \
+  | jq -r '.[].name' \
+  | awk -v pfx="$PREFIX" 'index($0,pfx)==1'
+}
+ensure_branch() {
+  local repo="$1" branch="$2"
+  local code; code=$(status "${GH_API}/repos/${ORG}/${repo}/branches/${branch}")
+  if [[ "$code" == "200" ]]; then echo "  ✔ branch '${branch}' exists"; return; fi
+  local default sha
+  default=$(api "${GH_API}/repos/${ORG}/${repo}" | jq -r '.default_branch')
+  sha=$(api "${GH_API}/repos/${ORG}/${repo}/git/refs/heads/'"$default"'" | jq -r '.object.sha')
+  api -X POST "${GH_API}/repos/${ORG}/${repo}/git/refs" -d "{\"ref\":\"refs/heads/${branch}\",\"sha\":\"${sha}\"}" >/dev/null
+  echo "  ✔ created branch '${branch}' from '${default}'"
+}
+add_bot_collaborator() {
+  local repo="$1"
+  local ucode; ucode=$(status "${GH_API}/users/${BOT_USER}")
+  if [[ "$ucode" != "200" ]]; then echo "  ⚠ bot user '${BOT_USER}' does not exist (skipping invite)"; return; fi
+  local code; code=$(status -X PUT "${GH_API}/repos/${ORG}/${repo}/collaborators/${BOT_USER}" -d '{"permission":"maintain"}')
+  case "$code" in
+    201) echo "  ✔ invite sent to '${BOT_USER}' (pending)";;
+    204) echo "  ✔ '${BOT_USER}' already collaborator";;
+    404) echo "  ⚠ cannot invite '${BOT_USER}' (visibility/policy)";;
+    *)   echo "  ⚠ collaborator API HTTP $code";;
+  esac
+}
+grant_team_access() {
+  local team_slug="$1" repo="$2" perm="${3:-push}"
+  local code; code=$(status -X PUT "${GH_API}/orgs/${ORG}/teams/${team_slug}/repos/${ORG}/${repo}" -d "{\"permission\":\"${perm}\"}")
+  [[ "$code" == "204" ]] && echo "  ✔ team '${team_slug}' -> '${repo}' (${perm})" || echo "  ⚠ team access HTTP $code for '${team_slug}'"
+}
+protect_branch() {
+  local repo="$1" branch="$2" approvals="$3"; shift 3
+  local users_json="[]" teams_json="[]"; local users=() teams=()
+  for item in "$@"; do [[ "$item" == user:* ]] && users+=("\"${item#user:}\""); [[ "$item" == team:* ]] && teams+=("\"${item#team:}\""); done
+  [[ ${#users[@]} -gt 0 ]] && users_json="[$(IFS=,; echo "${users[*]}")]"
+  [[ ${#teams[@]} -gt 0 ]] && teams_json="[$(IFS=,; echo "${teams[*]}")]"
+  local rsc; if [[ -n "$REQUIRED_CHECK_NAME" ]]; then rsc=$(jq -n --arg name "$REQUIRED_CHECK_NAME" '{strict:true,contexts:[$name]}'); else rsc=null; fi
+  local body; body=$(jq -n --argjson approvals "$approvals" --argjson users "$users_json" --argjson teams "$teams_json" --argjson checks "$rsc" '
+    { required_status_checks:$checks, enforce_admins:true,
+      required_pull_request_reviews:{ required_approving_review_count:($approvals|tonumber), dismiss_stale_reviews:true },
+      restrictions:{ users:$users, teams:$teams, apps:[] },
+      required_conversation_resolution:true, allow_force_pushes:false, allow_deletions:false, block_creations:false }')
+  api -X PUT "${GH_API}/repos/${ORG}/${repo}/branches/${branch}/protection" -d "$body" >/dev/null
+  local msg="approvals: ${approvals}"; [[ -n "$REQUIRED_CHECK_NAME" ]] && msg+="; requires check: ${REQUIRED_CHECK_NAME}"
+  echo "  ✔ protected '${branch}' (${msg})"
+}
+set_repo_toggles() {
+  local repo="$1"
+  api -X PATCH "${GH_API}/repos/${ORG}/${repo}" -d '{"delete_branch_on_merge":true,"allow_auto_merge":true}' >/dev/null
+  echo "  ✔ repo toggles set (delete_branch_on_merge, allow_auto_merge)"
+}
+
+repos=$(list_repos)
+if [[ -z "$repos" ]]; then echo "No repositories in '${ORG}' start with '${PREFIX}'."; exit 0; fi
+echo "Processing repos:"; echo "$repos" | sed 's/^/ - /'; echo "--------------------------------"
+
+while IFS= read -r REPO; do
+  echo "[${REPO}]"
+  ensure_branch "$REPO" "development"
+  add_bot_collaborator "$REPO"
+  grant_team_access "$DEV_TEAM" "$REPO" "push"
+  grant_team_access "$MAINTAINERS_TEAM" "$REPO" "maintain"
+  grant_team_access "$ADMINS_TEAM" "$REPO" "maintain"
+  protect_branch "$REPO" "master" 2 "team:${DEV_TEAM}" "team:${MAINTAINERS_TEAM}"
+  protect_branch "$REPO" "development" 1 "team:${ADMINS_TEAM}" "user:${BOT_USER}"
+  set_repo_toggles "$REPO"
+  echo
+done <<< "$repos"
+
+echo "All done."

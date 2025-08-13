@@ -4,18 +4,108 @@ set -euo pipefail
 need() { command -v "$1" >/dev/null 2>&1 || { echo "Missing $1"; exit 1; }; }
 need curl; need jq
 
+# Default values
+GH_API="https://api.github.com"
+ORG=""
+PREFIX=""
+BOT_USER=""
+REQUIRED_CHECK_NAME="${REQUIRED_CHECK_NAME:-}"
+
+# Usage function
+usage() {
+    cat << EOF
+GitHub Org Settings Automation
+
+Usage: $0 [OPTIONS]
+
+Required Options:
+  -o, --org ORG              Organization name (e.g., ucc-test-org)
+  -p, --prefix PREFIX        Repo name prefix to target (e.g., uh-)
+  -b, --bot-user BOT_USER    Bot GitHub username (e.g., Cloud-Platforms-DevOps-Bot)
+
+Optional Options:
+  -a, --api-url URL          GitHub API base URL (default: https://api.github.com)
+  -c, --check-name NAME      Required CI check name (can also use REQUIRED_CHECK_NAME env var)
+  -h, --help                 Show this help message
+
+Environment Variables:
+  GITHUB_TOKEN              GitHub Personal Access Token (required)
+  REQUIRED_CHECK_NAME       Required CI check name (optional)
+
+Examples:
+  $0 -o ucc-test-org -p uh- -b Cloud-Platforms-DevOps-Bot
+  $0 --org myorg --prefix app- --bot-user mybot --api-url https://github.company.com/api/v3
+EOF
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -o|--org)
+            ORG="$2"
+            shift 2
+            ;;
+        -p|--prefix)
+            PREFIX="$2"
+            shift 2
+            ;;
+        -b|--bot-user)
+            BOT_USER="$2"
+            shift 2
+            ;;
+        -a|--api-url)
+            GH_API="$2"
+            shift 2
+            ;;
+        -c|--check-name)
+            REQUIRED_CHECK_NAME="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# Validate required parameters
+if [[ -z "$ORG" ]]; then
+    echo "Error: Organization name is required (-o/--org)"
+    usage
+    exit 1
+fi
+
+if [[ -z "$PREFIX" ]]; then
+    echo "Error: Repo prefix is required (-p/--prefix)"
+    usage
+    exit 1
+fi
+
+if [[ -z "$BOT_USER" ]]; then
+    echo "Error: Bot username is required (-b/--bot-user)"
+    usage
+    exit 1
+fi
+
+# Check for GitHub token in environment
+GH_TOKEN="${GITHUB_TOKEN:-}"
+if [[ -z "$GH_TOKEN" ]]; then
+    echo "Error: GITHUB_TOKEN environment variable is required"
+    echo "Set it with: export GITHUB_TOKEN=your_token_here"
+    exit 1
+fi
+
 echo "GitHub Org Settings Automation"
 echo "--------------------------------"
-
-read -rp "GitHub API base (default https://api.github.com): " GH_API
-GH_API=${GH_API:-https://api.github.com}
-read -rp "Organization name (e.g., ucc-test-org): " ORG
-read -rp "Repo name prefix to target (e.g., uh-): " PREFIX
-read -rsp "GitHub Personal Access Token: " GH_TOKEN; echo
-read -rp "Bot GitHub username (e.g., Cloud-Platforms-DevOps-Bot): " BOT_USER
-
-# Optional: set before running (e.g., export REQUIRED_CHECK_NAME=build)
-REQUIRED_CHECK_NAME="${REQUIRED_CHECK_NAME:-}"
+echo "Organization: $ORG"
+echo "Repo prefix: $PREFIX"
+echo "Bot user: $BOT_USER"
+echo "API URL: $GH_API"
 
 HDR=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "Content-Type: application/json")
 api() { curl -sS "${HDR[@]}" "$@"; }

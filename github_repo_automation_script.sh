@@ -14,7 +14,6 @@ read -rp "Repo name prefix to target (e.g., uh-): " PREFIX
 read -rsp "GitHub Personal Access Token: " GH_TOKEN; echo
 read -rp "Bot GitHub username (e.g., Cloud-Platforms-DevOps-Bot): " BOT_USER
 
-# Optional: set before running (e.g., export REQUIRED_CHECK_NAME=build)
 REQUIRED_CHECK_NAME="${REQUIRED_CHECK_NAME:-}"
 
 HDR=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "Content-Type: application/json")

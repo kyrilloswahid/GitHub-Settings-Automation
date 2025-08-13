@@ -5,14 +5,14 @@ set -euo pipefail
 need() { command -v "$1" >/dev/null 2>&1 || { echo "Missing $1"; exit 1; }; }
 need curl; need jq
 
-# Configuration
+# Configs
 GH_API="https://api.github.com"
 ORG=""
 PREFIX=""
 BOT_USER=""
 REQUIRED_CHECK_NAME="build"
 
-# Help function
+# help doc
 usage() {
     cat << EOF
 GitHub Repository Automation Script
@@ -28,11 +28,12 @@ Environment Variables:
   GH_TOKEN                   GitHub Personal Access Token (required)
 
 Example:
+  export GH_TOKEN=your_token_here
   $0 -o my-org -p app- -b my-bot
 EOF
 }
 
-# Parse arguments
+# arguments parsing
 while [[ $# -gt 0 ]]; do
     case $1 in
         -o|--org) ORG="$2"; shift 2 ;;
@@ -43,27 +44,34 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate inputs
+# inputs validation
 [[ -z "$ORG" ]] && { echo "Error: Organization required (-o)"; usage; exit 1; }
 [[ -z "$PREFIX" ]] && { echo "Error: Prefix required (-p)"; usage; exit 1; }
 [[ -z "$BOT_USER" ]] && { echo "Error: Bot user required (-b)"; usage; exit 1; }
-[[ -z "${GH_TOKEN:-}" ]] && { echo "Error: GH_TOKEN environment variable required"; exit 1; }
+[[ -z "${GH_TOKEN:-}" ]] && { echo "Error: GH_TOKEN environment variable required"; echo "Set it with: export GH_TOKEN=your_token_here"; exit 1; }
 
 echo "GitHub Repository Automation"
 echo "Organization: $ORG | Prefix: $PREFIX | Bot: $BOT_USER"
 echo "-----------------------------------------------------------"
 
-# API helpers
+# API setup
 HDR=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json")
 api() { curl -sS "${HDR[@]}" "$@"; }
 status() { curl -s -o /dev/null -w "%{http_code}" "${HDR[@]}" "$@"; }
 
-# Get all teams with pagination
+# teams discovery
 get_all_teams() {
     local page=1 result="[]"
     while :; do
         local chunk
         chunk=$(api "${GH_API}/orgs/${ORG}/teams?per_page=100&page=${page}")
+        
+        if echo "$chunk" | jq -e '.message' >/dev/null 2>&1; then
+            echo "ERROR: Cannot access teams - $(echo "$chunk" | jq -r '.message')"
+            echo "Please ensure your GH_TOKEN has 'read:org' permissions"
+            exit 1
+        fi
+        
         [[ "$(jq 'length' <<<"$chunk")" == "0" ]] && break
         result=$(jq -s 'add' <(echo "$result") <(echo "$chunk"))
         ((page++))
@@ -71,7 +79,6 @@ get_all_teams() {
     echo "$result"
 }
 
-# Find team by name
 find_team() {
     local teams="$1" name="$2"
     jq -r --arg name "$name" '
@@ -79,29 +86,32 @@ find_team() {
         .[0].slug // empty' <<<"$teams"
 }
 
-# Discover required teams
 echo "Discovering teams..."
 ALL_TEAMS=$(get_all_teams)
 DEVELOPERS=$(find_team "$ALL_TEAMS" "Developers")
 MAINTAINERS=$(find_team "$ALL_TEAMS" "Maintainers")
-ADMINS=$(find_team "$ALL_TEAMS" "Instance Admins")
+ADMINS=$(find_team "$ALL_TEAMS" "Instance-Admins")
 
-# Validate teams exist
-for team_pair in "Developers:$DEVELOPERS" "Maintainers:$MAINTAINERS" "Admins:$ADMINS"; do
+for team_pair in "Developers:$DEVELOPERS" "Maintainers:$MAINTAINERS" "Instance-Admins:$ADMINS"; do
     name="${team_pair%%:*}"
     slug="${team_pair#*:}"
-    [[ -z "$slug" ]] && { echo "ERROR: Team '$name' not found"; exit 1; }
+    if [[ -z "$slug" ]]; then
+        echo "ERROR: Team '$name' not found"
+        echo "Available teams in organization '$ORG':"
+        echo "$ALL_TEAMS" | jq -r '.[] | "  - " + .name + " (slug: " + .slug + ")"'
+        exit 1
+    fi
     echo "✓ $name team: $slug"
 done
 
-# Get repositories with prefix
+# get repos using prefix
 get_repos() {
     api "${GH_API}/orgs/${ORG}/repos?per_page=100&type=all" | 
     jq -r '.[].name' | 
     awk -v prefix="$PREFIX" 'index($0,prefix)==1'
 }
 
-# Create development branch if missing
+# create dev branch if missing
 create_development_branch() {
     local repo="$1"
     local status_code
@@ -121,7 +131,7 @@ create_development_branch() {
     echo "  ✓ Created development branch"
 }
 
-# Add bot as collaborator
+# add bot as collaborator
 add_bot_collaborator() {
     local repo="$1"
     local user_status
@@ -140,7 +150,7 @@ add_bot_collaborator() {
     esac
 }
 
-# Grant team repository access
+# grant access
 grant_team_access() {
     local team="$1" repo="$2" permission="$3"
     local response
@@ -150,7 +160,7 @@ grant_team_access() {
     [[ "$response" == "204" ]] && echo "  ✓ $team team: $permission access" || echo "  ⚠ $team access failed"
 }
 
-# Protect branch with rules
+# protect branch with rules
 protect_branch() {
     local repo="$1" branch="$2" approvals="$3"
     shift 3
@@ -188,7 +198,7 @@ protect_branch() {
     echo "  ✓ Protected $branch ($approvals approvals required)"
 }
 
-# Configure repository settings
+# repository settings
 configure_repo_settings() {
     local repo="$1"
     local settings='{
@@ -203,7 +213,7 @@ configure_repo_settings() {
     echo "  ✓ Repository settings configured"
 }
 
-# Main execution
+# main
 repos=$(get_repos)
 [[ -z "$repos" ]] && { echo "No repositories found with prefix '$PREFIX'"; exit 0; }
 
@@ -225,4 +235,4 @@ while IFS= read -r repo; do
     echo
 done <<< "$repos"
 
-echo "✅ All repositories configured successfully!"
+echo "✓ All repositories configured successfully!"

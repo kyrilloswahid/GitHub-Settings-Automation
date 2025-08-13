@@ -60,22 +60,16 @@ status() { curl -s -o /dev/null -w "%{http_code}" "${HDR[@]}" "$@"; }
 
 # teams discovery
 get_all_teams() {
-    local page=1 result="[]"
-    while :; do
-        local chunk
-        chunk=$(api "${GH_API}/orgs/${ORG}/teams?per_page=100&page=${page}")
-        
-        if echo "$chunk" | jq -e '.message' >/dev/null 2>&1; then
-            echo "ERROR: Cannot access teams - $(echo "$chunk" | jq -r '.message')"
-            echo "Please ensure your GH_TOKEN has 'read:org' permissions"
-            exit 1
-        fi
-        
-        [[ "$(jq 'length' <<<"$chunk")" == "0" ]] && break
-        result=$(jq -s 'add' <(echo "$result") <(echo "$chunk"))
-        ((page++))
-    done
-    echo "$result"
+    local teams
+    teams=$(api "${GH_API}/orgs/${ORG}/teams")
+    
+    if echo "$teams" | jq -e '.message' >/dev/null 2>&1; then
+        echo "ERROR: Cannot access teams - $(echo "$teams" | jq -r '.message')"
+        echo "Please ensure your GH_TOKEN has 'read:org' permissions"
+        exit 1
+    fi
+    
+    echo "$teams"
 }
 
 find_team() {

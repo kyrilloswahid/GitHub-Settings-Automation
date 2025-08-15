@@ -143,16 +143,6 @@ add_bot_collaborator() {
     esac
 }
 
-# grant access
-grant_team_access() {
-    local team="$1" repo="$2" permission="$3"
-    local response
-    response=$(status -X PUT "${GH_API}/orgs/${ORG}/teams/${team}/repos/${ORG}/${repo}" \
-        -d "{\"permission\":\"${permission}\"}")
-    
-    [[ "$response" == "204" ]] && echo "  ✓ $team team: $permission access" || echo "  ⚠ $team access failed"
-}
-
 # protect branch with rules
 protect_branch() {
     local repo="$1" branch="$2" approvals="$3"
@@ -219,9 +209,7 @@ while IFS= read -r repo; do
     echo "[$repo]"
     create_development_branch "$repo"
     add_bot_collaborator "$repo"
-    grant_team_access "$DEVELOPERS" "$repo" "push"
-    grant_team_access "$MAINTAINERS" "$repo" "maintain" 
-    grant_team_access "$ADMINS" "$repo" "maintain"
+    # (grant access removed by request)
     protect_branch "$repo" "master" 2 "team:$DEVELOPERS" "team:$MAINTAINERS"
     protect_branch "$repo" "development" 1 "team:$ADMINS" "user:$BOT_USER"
     configure_repo_settings "$repo"

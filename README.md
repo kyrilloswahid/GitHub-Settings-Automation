@@ -53,4 +53,4 @@ export GH_TOKEN=your_token_here
 - The script must be run with a valid GitHub token in the `GH_TOKEN` environment variable.
 - The token must have sufficient permissions to read organization teams and modify repository settings.
 - If any required team is missing, the script will display an error and exit.
-# GitHub-Settings-Automation
+- Granting team access to repositories is handled via a configuration file and is not addressed by this script.

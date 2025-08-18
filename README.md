@@ -24,13 +24,6 @@ export GH_TOKEN=your_github_token
 
 - `GH_TOKEN` &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GitHub Personal Access Token (must have `repo` and `read:org` scopes)
 
-### Example
-
-```sh
-export GH_TOKEN=your_token_here
-./test.sh -o my-org -p app- -b my-bot
-```
-
 ## What the Script Does
 
 1. **Discovers Teams:** Looks for teams named `Developers`, `Maintainers`, and `Instance-Admins` in the organization.

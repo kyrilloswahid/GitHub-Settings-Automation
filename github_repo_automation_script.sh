@@ -60,16 +60,32 @@ status() { curl -s -o /dev/null -w "%{http_code}" "${HDR[@]}" "$@"; }
 
 # teams discovery
 get_all_teams() {
-    local teams
-    teams=$(api "${GH_API}/orgs/${ORG}/teams")
-    
-    if echo "$teams" | jq -e '.message' >/dev/null 2>&1; then
-        echo "ERROR: Cannot access teams - $(echo "$teams" | jq -r '.message')"
-        echo "Please ensure your GH_TOKEN has 'read:org' permissions"
-        exit 1
-    fi
-    
-    echo "$teams"
+    local page=1
+    local per_page=100
+    local all_teams="[]"
+    local url="${GH_API}/orgs/${ORG}/teams?per_page=${per_page}&page=${page}"
+    while :; do
+        # Get both headers and body
+        local response
+        response=$(curl -sS -D - -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "$url")
+        local body headers
+        body=$(echo "$response" | awk '/^\r?$/ {found=1; next} found')
+        headers=$(echo "$response" | awk '/^\r?$/ {exit} {print}')
+        if echo "$body" | jq -e '.message' >/dev/null 2>&1; then
+            echo "ERROR: Cannot access teams - $(echo "$body" | jq -r '.message')"
+            echo "Please ensure your GH_TOKEN has 'read:org' permissions"
+            exit 1
+        fi
+        all_teams=$(jq -s 'add' <(echo "$all_teams") <(echo "$body"))
+        # Check for next page in Link header
+        local next_link
+        next_link=$(echo "$headers" | grep -i '^Link:' | grep -o '<[^>]*>; rel="next"' | grep -o '<[^>]*>' | tr -d '<>')
+        if [[ -z "$next_link" ]]; then
+            break
+        fi
+        url="$next_link"
+    done
+    echo "$all_teams"
 }
 
 find_team() {

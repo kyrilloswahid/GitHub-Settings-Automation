@@ -7,6 +7,23 @@ This script automates the configuration of GitHub repositories within an organiz
 - Protects the `master` and `development` branches with review and status check requirements
 - Configures repository settings (e.g., enables auto-merge, disables merge commits)
 
+	- **Repository Settings Mapping (from GitLab to GitHub):**
+		- `only_allow_merge_if_pipeline_succeeds: true` → `required_status_checks: { strict: true, contexts: [$check] }`
+		- `only_allow_merge_if_all_discussions_are_resolved: true` → `required_conversation_resolution: true`
+		- `remove_source_branch_after_merge: true` → `delete_branch_on_merge: true`
+		- `auto_cancel_pending_pipelines: "enabled"` → In GitHub Actions workflow:
+			```yaml
+			concurrency:
+				group: pr-${{ github.head_ref || github.ref }}
+				cancel-in-progress: true
+			```
+		- `ci_forward_deployment_enabled: true` & `ci_forward_deployment_rollback_allowed: true` → Workflow has `deploy_production` and `rollback_production` jobs
+		- `ci_separated_caches: true` → Workflow uses GitHub Actions cache with separate keys
+		- `build_git_strategy: "fetch"` → `fetch-depth: 0` in workflow
+		- **Can't find direct equivalents:**
+			- `public_jobs: false` → Jobs are private by default in private repos, public in public repos
+			- `ci_pipeline_variables_minimum_override_role: "developer"` → Handled through repository permissions and environment protection rules
+
 ## Usage
 
 ```sh

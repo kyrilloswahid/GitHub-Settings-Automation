@@ -101,7 +101,6 @@ DEVELOPERS=$(find_team "$ALL_TEAMS" "Developers")
 MAINTAINERS=$(find_team "$ALL_TEAMS" "Maintainers")
 ADMINS=$(find_team "$ALL_TEAMS" "Instance-Admins")
 
-# Always list all teams (with parent info) for visibility
 echo "All teams in organization '$ORG':"
 echo "$ALL_TEAMS" | jq -r '.[] | "  - " + .name + " (slug: " + .slug + ")" + (if .parent != null then " [parent: " + .parent.name + "]" else "" end)'
 

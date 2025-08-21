@@ -54,7 +54,7 @@ This script automates the configuration of GitHub repositories within an organiz
 
 ```sh
 export GH_TOKEN=your_github_token
-./github_repo_automation_script.sh -o ORG_NAME -p REPO_PREFIX -b BOT_USER
+./github_repo_automation_script.sh -o ORG_NAME -p REPO_PREFIX -b BOT_USER -t PARENT_TEAM
 ```
 
 ### Required Options
@@ -62,6 +62,7 @@ export GH_TOKEN=your_github_token
 - `-o`, `--org` &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Organization name (e.g., `my-org`)
 - `-p`, `--prefix` &nbsp;&nbsp;&nbsp;Repository name prefix to target (e.g., `app-`)
 - `-b`, `--bot-user` &nbsp;Bot GitHub username to add as collaborator
+- `-t`, `--parent-team` &nbsp;Parent team name to list its childs
 
 ### Environment Variables
 

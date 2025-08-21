@@ -9,6 +9,7 @@ GH_API="https://api.github.com"
 ORG=""
 PREFIX=""
 BOT_USER=""
+# TODO:add all the name of the GitHub CI jobs in this array to ensure that the pipeline passes before merging
 REQUIRED_CHECK_NAME="build"
 
 # help doc

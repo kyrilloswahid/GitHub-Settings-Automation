@@ -3,30 +3,10 @@
 This script automates the configuration of GitHub repositories within an organization. It performs the following actions for all repositories matching a specified prefix:
 - Ensures a `development` branch exists (creates it if missing)
 - Adds a specified bot user as a collaborator
-- Protects the `master` and `development` branches with review and status check requirements
+- Protects the `main` and `development` branches with review and status check requirements
 - Configures repository settings:
 
-## Settings Equivalence
-
-| GitLab Setting                        | GitHub Equivalent                       |
-|-----------------------------------------------------|---------------------------------------------------|
-| only_allow_merge_if_pipeline_succeeds: true         | required_status_checks: { strict: true, contexts: [$check] } |
-| only_allow_merge_if_all_discussions_are_resolved: true | required_conversation_resolution: true           |
-| remove_source_branch_after_merge: true              | delete_branch_on_merge: true                      |
-| auto_cancel_pending_pipelines: "enabled"           | concurrency (in workflow YAML)                    |
-| ci_forward_deployment_enabled: true                 | deploy_production job (in workflow YAML)          |
-| ci_forward_deployment_rollback_allowed: true        | rollback_production job (in workflow YAML)        |
-| ci_separated_caches: true                           | GitHub Actions cache with separate keys (workflow) |
-| build_git_strategy: "fetch"                        | fetch-depth: 0 (in workflow YAML)                 |
-| public_jobs: false                                  | No direct equivalent; jobs are private in private repos |
-| ci_pipeline_variables_minimum_override_role: "developer" | No direct equivalent; handled by repo/environment permissions |
-| delete_branch_on_merge: true                        | delete_branch_on_merge: true                      |
-| allow_auto_merge: true                              | allow_auto_merge: true                            |
-| allow_squash_merge: true                            | allow_squash_merge: true                          |
-| allow_merge_commit: false                           | allow_merge_commit: false                         |
-| allow_rebase_merge: false                           | allow_rebase_merge: false                         |
-
-## Settings Implementation
+## Repository Settings 
 
 | Setting                        | Script Level | Workflow Level | No Equivalence | Description                                                               |
 |------------------------------------------|:------------:|:--------------:|:--------------:|-----------------------------------------------------------------------------------------------|
@@ -92,17 +72,6 @@ export GH_TOKEN=your_github_token
 
 - `GH_TOKEN` &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GitHub Personal Access Token (must have `repo` and `read:org` scopes)
 
-
-## Summary
-
-1. **Discovers Teams:** Looks for child teams named `Developers`, `Maintainers`, and `Admins` under the specified parent team in the organization.
-2. **Finds Target Repositories:** Lists all repositories in the organization whose names start with the given prefix.
-3. **For Each Repository:**
-	- Ensures a `development` branch exists.
-	- Adds the bot user as a collaborator with `maintain` permission.
-	- Protects the `master` branch (requires 2 approvals from `Developers` or `Maintainers`).
-	- Protects the `development` branch (requires 1 approval from `Admins` or the bot user).
-	- Configures repository settings (enables auto-merge, disables merge commits, etc.).
 
 ## Requirements
 

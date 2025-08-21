@@ -4,9 +4,9 @@ This script automates the configuration of GitHub repositories within an organiz
 - Ensures a `development` branch exists (creates it if missing)
 - Adds a specified bot user as a collaborator
 - Protects the `master` and `development` branches with review and status check requirements
-- Configures repository settings
+- Configures repository settings:
 
-## Settings Equivalence Table
+## Settings Equivalence
 
 | GitLab Setting                        | GitHub Equivalent                       |
 |-----------------------------------------------------|---------------------------------------------------|
@@ -26,7 +26,7 @@ This script automates the configuration of GitHub repositories within an organiz
 | allow_merge_commit: false                           | allow_merge_commit: false                         |
 | allow_rebase_merge: false                           | allow_rebase_merge: false                         |
 
-## Implementation & Relevance Table
+## Settings Implementation
 
 | Setting                        | Script Level | Workflow Level | No Equivalence | Description                                                               |
 |------------------------------------------|:------------:|:--------------:|:--------------:|-----------------------------------------------------------------------------------------------|

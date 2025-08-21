@@ -52,20 +52,22 @@ This script automates the configuration of GitHub repositories within an organiz
 	- It sets up API headers for authenticated requests and defines helper functions for API calls (`api()` and `status()`).
 
 2. **Team Discovery**
-	- `get_all_teams()`: Fetches all teams in the organization, handling pagination to ensure no teams are missed.
-	- `find_team()`: Finds a team by name in the teams JSON and returns its slug.
-	- The script uses these to identify the key teams: Developers, Maintainers, and Instance-Admins. If any are missing, it prints all available teams and exits with a clear error.
+	- `get_all_child_teams()`: Fetches all child teams of the specified parent team in the organization.
+	- `find_team()`: Finds a team by slug in the teams JSON and returns its slug.
+	- The script uses these to identify the key teams: Developers, Maintainers, and Admins. If any are missing, it prints all available teams and exits with a clear error.
 
 3. **Repository Discovery**
-	- `get_repos()`: Fetches all repositories in the organization (with pagination), filters them by the specified prefix, and outputs the repo names.
+	- `get_repos()`: Fetches all repositories in the organization, filters them by the specified prefix, and outputs the repo names.
+
 
 4. **Per-Repository Automation**
 	- For each matching repository, the script:
 	  - `create_development_branch()`: Ensures a `development` branch exists (creating it from the default branch if needed).
-	  - `add_bot_collaborator()`: Adds the DevOps bot as a collaborator with the correct permissions.
-	  - Detects the default branch (main/master) and applies branch protection rules:
-		 - `protect_branch()`: Sets branch protection rules for both the default and development branches, enforcing the required teams and approval counts.
+	  - `add_bot_collaborator()`: Adds the bot user as a collaborator with the correct permissions.
+	  - Applies branch protection rules:
+		 - `protect_branch()`: Sets branch protection rules for both the `master` and `development` branches, enforcing the required teams and approval counts.
 	  - `configure_repo_settings()`: Configures repository settings to standardize merge strategies and branch deletion.
+
 
 5. **Completion**
 	- After processing all repositories, the script prints a success message.
@@ -90,15 +92,16 @@ export GH_TOKEN=your_github_token
 
 - `GH_TOKEN` &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;GitHub Personal Access Token (must have `repo` and `read:org` scopes)
 
+
 ## Summary
 
-1. **Discovers Teams:** Looks for teams named `Developers`, `Maintainers`, and `Instance-Admins` in the organization.
+1. **Discovers Teams:** Looks for child teams named `Developers`, `Maintainers`, and `Admins` under the specified parent team in the organization.
 2. **Finds Target Repositories:** Lists all repositories in the organization whose names start with the given prefix.
 3. **For Each Repository:**
 	- Ensures a `development` branch exists.
 	- Adds the bot user as a collaborator with `maintain` permission.
 	- Protects the `master` branch (requires 2 approvals from `Developers` or `Maintainers`).
-	- Protects the `development` branch (requires 1 approval from `Instance-Admins` or the bot user).
+	- Protects the `development` branch (requires 1 approval from `Admins` or the bot user).
 	- Configures repository settings (enables auto-merge, disables merge commits, etc.).
 
 ## Requirements

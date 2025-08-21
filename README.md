@@ -8,7 +8,7 @@ This script automates the configuration of GitHub repositories within an organiz
 
 ## Settings Equivalence Table
 
-| Requirement / GitLab Setting                        | GitHub Equivalent (if any)                        |
+| GitLab Setting                        | GitHub Equivalent                       |
 |-----------------------------------------------------|---------------------------------------------------|
 | only_allow_merge_if_pipeline_succeeds: true         | required_status_checks: { strict: true, contexts: [$check] } |
 | only_allow_merge_if_all_discussions_are_resolved: true | required_conversation_resolution: true           |
@@ -28,7 +28,7 @@ This script automates the configuration of GitHub repositories within an organiz
 
 ## Implementation & Relevance Table
 
-| Setting / Feature                        | Script Level | Workflow Level | No Equivalence | What it Does / Relevance to Task                                                                 |
+| Setting                        | Script Level | Workflow Level | No Equivalence | Description                                                               |
 |------------------------------------------|:------------:|:--------------:|:--------------:|-----------------------------------------------------------------------------------------------|
 | delete_branch_on_merge                   |      ✔       |                |                | Deletes branch after merge, keeps repos clean, standardizes behavior                          |
 | allow_auto_merge                         |      ✔       |                |                | Enables auto-merge for PRs that meet all requirements                                         |

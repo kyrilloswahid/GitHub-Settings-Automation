@@ -6,21 +6,43 @@ This script automates the configuration of GitHub repositories within an organiz
 - Protects the `master` and `development` branches with review and status check requirements
 - Configures repository settings (e.g., enables auto-merge, disables merge commits)
 
-	- `only_allow_merge_if_pipeline_succeeds: true` → `required_status_checks: { strict: true, contexts: [$check] }`
-	- `only_allow_merge_if_all_discussions_are_resolved: true` → `required_conversation_resolution: true`
-	- `remove_source_branch_after_merge: true` → `delete_branch_on_merge: true`
-	- `auto_cancel_pending_pipelines: "enabled"` → In GitHub Actions workflow:
-		```yaml
-		concurrency:
-			group: pr-${{ github.head_ref || github.ref }}
-			cancel-in-progress: true
-		```
-	- `ci_forward_deployment_enabled: true` & `ci_forward_deployment_rollback_allowed: true` → Workflow has `deploy_production` and `rollback_production` jobs
-	- `ci_separated_caches: true` → Workflow uses GitHub Actions cache with separate keys
-	- `build_git_strategy: "fetch"` → `fetch-depth: 0` in workflow
-	- **Can't find direct equivalents:**
-		- `public_jobs: false` → Jobs are private by default in private repos, public in public repos
-		- `ci_pipeline_variables_minimum_override_role: "developer"` → Handled through repository permissions and environment protection rules
+## Settings Equivalence Table
+
+| Requirement / GitLab Setting                        | GitHub Equivalent (if any)                        |
+|-----------------------------------------------------|---------------------------------------------------|
+| only_allow_merge_if_pipeline_succeeds: true         | required_status_checks: { strict: true, contexts: [$check] } |
+| only_allow_merge_if_all_discussions_are_resolved: true | required_conversation_resolution: true           |
+| remove_source_branch_after_merge: true              | delete_branch_on_merge: true                      |
+| auto_cancel_pending_pipelines: "enabled"           | concurrency (in workflow YAML)                    |
+| ci_forward_deployment_enabled: true                 | deploy_production job (in workflow YAML)          |
+| ci_forward_deployment_rollback_allowed: true        | rollback_production job (in workflow YAML)        |
+| ci_separated_caches: true                           | GitHub Actions cache with separate keys (workflow) |
+| build_git_strategy: "fetch"                        | fetch-depth: 0 (in workflow YAML)                 |
+| public_jobs: false                                  | No direct equivalent; jobs are private in private repos |
+| ci_pipeline_variables_minimum_override_role: "developer" | No direct equivalent; handled by repo/environment permissions |
+| delete_branch_on_merge: true                        | delete_branch_on_merge: true                      |
+| allow_auto_merge: true                              | allow_auto_merge: true                            |
+| allow_squash_merge: true                            | allow_squash_merge: true                          |
+| allow_merge_commit: false                           | allow_merge_commit: false                         |
+| allow_rebase_merge: false                           | allow_rebase_merge: false                         |
+
+## Implementation & Relevance Table
+
+| Setting / Feature                        | Script Level | Workflow Level | No Equivalence | What it Does / Relevance to Task                                                                 |
+|------------------------------------------|:------------:|:--------------:|:--------------:|-----------------------------------------------------------------------------------------------|
+| delete_branch_on_merge                   |      ✔       |                |                | Deletes branch after merge, keeps repos clean, standardizes behavior                          |
+| allow_auto_merge                         |      ✔       |                |                | Enables auto-merge for PRs that meet all requirements                                         |
+| allow_squash_merge                       |      ✔       |                |                | Allows squash merging, cleaner commit history                                                 |
+| allow_merge_commit                       |      ✔       |                |                | Disables merge commits, enforces linear history                                               |
+| allow_rebase_merge                       |      ✔       |                |                | Disables rebase merging, standardizes merge strategy                                          |
+| required_status_checks                   |      ✔       |                |                | Enforces CI must pass before merging (pipeline succeeds)                                      |
+| required_conversation_resolution         |      ✔       |                |                | Requires all discussions to be resolved before merging                                        |
+| concurrency (auto_cancel_pending_pipelines) |            |      ✔         |                | Cancels in-progress workflows for same PR, set in workflow YAML                              |
+| deploy_production/rollback_production    |              |      ✔         |                | Forward deployment/rollback jobs, set in workflow YAML                                       |
+| cache with separate keys                 |              |      ✔         |                | Ensures separate caches for jobs, set in workflow YAML                                       |
+| fetch-depth: 0                           |              |      ✔         |                | Ensures full git history for builds, set in workflow YAML                                    |
+| public_jobs                              |              |                |      ✔         | Not directly supported; jobs are private in private repos, public in public repos            |
+| ci_pipeline_variables_minimum_override_role |            |                |      ✔         | Not directly supported; handled by repo/environment permissions                               |
 
 
 ## Logical Flow of the Script

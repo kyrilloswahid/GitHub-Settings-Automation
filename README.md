@@ -54,7 +54,7 @@ This script automates the configuration of GitHub repositories within an organiz
 
 ```sh
 export GH_TOKEN=your_github_token
-./github_repo_automation_script.sh -o ORG_NAME -p REPO_PREFIX -b BOT_USER
+./github_repo_automation_script.sh -o ORG_NAME -p REPO_PREFIX -b BOT_USER -t PARENT_TEAM_NAME
 ```
 
 ### Required Options

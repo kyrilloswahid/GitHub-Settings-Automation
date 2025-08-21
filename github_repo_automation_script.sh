@@ -1,10 +1,3 @@
-# find a team by name in the teams list
-find_team() {
-    local teams="$1" name="$2"
-    jq -r --arg name "$name" '
-        map(select((.name|ascii_downcase) == ($name|ascii_downcase))) |
-        .[0].slug // empty' <<<"$teams"
-}
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -43,6 +36,7 @@ EOF
 while [[ $# -gt 0 ]]; do
     case $1 in
         -o|--org) ORG="$2"; shift 2 ;;
+        -t|--team) TEAM="$2"; shift 2 ;;
         -p|--prefix) PREFIX="$2"; shift 2 ;;
         -b|--bot-user) BOT_USER="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
@@ -52,12 +46,14 @@ done
 
 # inputs validation
 [[ -z "$ORG" ]] && { echo "Error: Organization required (-o)"; usage; exit 1; }
+[[ -z "$TEAM" ]] && { echo "Error: Organization required (-o)"; usage; exit 1; }
 [[ -z "$PREFIX" ]] && { echo "Error: Prefix required (-p)"; usage; exit 1; }
 [[ -z "$BOT_USER" ]] && { echo "Error: Bot user required (-b)"; usage; exit 1; }
 [[ -z "${GH_TOKEN:-}" ]] && { echo "Error: GH_TOKEN environment variable required"; echo "Set it with: export GH_TOKEN=your_token_here"; exit 1; }
 
+
 echo "GitHub Repository Automation"
-echo "Organization: $ORG | Prefix: $PREFIX | Bot: $BOT_USER"
+echo "Organization: $ORG | Prefix: $PREFIX | Bot: $BOT_USER | Team: $TEAM"
 echo "-----------------------------------------------------------"
 
 # API setup
@@ -66,55 +62,51 @@ api() { curl -sS "${HDR[@]}" "$@"; }
 status() { curl -s -o /dev/null -w "%{http_code}" "${HDR[@]}" "$@"; }
 
 # teams discovery
-get_all_teams() {
-    local page=1
-    local per_page=100
-    local all_teams="[]"
-    local url="${GH_API}/orgs/${ORG}/teams?per_page=${per_page}&page=${page}"
-    while :; do
-        # get both headers and body
-        local response
-        response=$(curl -sS -D - -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "$url")
-        local body headers
-        body=$(echo "$response" | awk '/^\r?$/ {found=1; next} found')
-        headers=$(echo "$response" | awk '/^\r?$/ {exit} {print}')
-        if echo "$body" | jq -e '.message' >/dev/null 2>&1; then
-            echo "ERROR: Cannot access teams - $(echo "$body" | jq -r '.message')"
-            echo "Please ensure your GH_TOKEN has 'read:org' permissions"
-            exit 1
-        fi
-        all_teams=$(jq -s 'add' <(echo "$all_teams") <(echo "$body"))
-        local next_link
-        next_link=$(echo "$headers" | grep -i '^Link:' | grep -o '<[^>]*>; rel="next"' | grep -o '<[^>]*>' | tr -d '<>')
-        if [[ -z "$next_link" ]]; then
-            while :; do
-                local body
-                body=$(api "${GH_API}/orgs/${ORG}/teams?per_page=${per_page}&page=${page}")
-                if [[ "$(echo "$body" | jq 'length')" -eq 0 ]]; then
-                    break
-                fi
-                all_teams=$(jq -s 'add' <(echo "$all_teams") <(echo "$body"))
-                ((page++))
-            done
-            echo "$all_teams"
-            return
-        fi
-    done
-    echo "$all_teams"
+get_all_child_teams() {
+    local teams
+    teams=$(api "${GH_API}/orgs/${ORG}/teams/${TEAM}/teams")
+
+    if echo "$teams" | jq -e '.message' >/dev/null 2>&1; then
+        echo "ERROR: Cannot access teams - $(echo "$teams" | jq -r '.message')"
+        echo "Please ensure your GH_TOKEN has 'read:org' permissions"
+        exit 1
+    fi
+    
+    echo "$teams"
 }
 
-ALL_TEAMS=$(get_all_teams)
-DEVELOPERS=$(find_team "$ALL_TEAMS" "Developers")
-MAINTAINERS=$(find_team "$ALL_TEAMS" "Maintainers")
-ADMINS=$(find_team "$ALL_TEAMS" "Instance-Admins")
+find_team() {
+    local teams="$1" slug="$2"
+    jq -r --arg slug "$slug" '
+        map(select((.slug|ascii_downcase) == ($slug|ascii_downcase))) |
+        .[0].slug // empty' <<<"$teams"
+}
 
-# check that all required teams are found
-if [[ -z "$DEVELOPERS" || -z "$MAINTAINERS" || -z "$ADMINS" ]]; then
-    echo "ERROR: One or more required teams (Developers, Maintainers, Instance-Admins) not found in organization '$ORG'."
-    echo "Available teams:"
-    echo "$ALL_TEAMS" | jq -r '.[] | "  - " + .name + " (slug: " + .slug + ")"'
-    exit 1
-fi
+echo "Discovering teams..."
+ALL_TEAMS=$(get_all_child_teams)
+DEVELOPERS=$(find_team "$ALL_TEAMS" "$TEAM-write")
+MAINTAINERS=$(find_team "$ALL_TEAMS" "$TEAM-maintain")
+ADMINS=$(find_team "$ALL_TEAMS" "$TEAM-admin")
+echo $ALL_TEAMS
+
+for team_pair in "Developers:$DEVELOPERS" "Maintainers:$MAINTAINERS" "Instance-Admins:$ADMINS"; do
+    name="${team_pair%%:*}"
+    slug="${team_pair#*:}"
+    if [[ -z "$slug" ]]; then
+        echo "ERROR: Team '$name' not found"
+        echo "Available teams in organization '$ORG':"
+        echo "$ALL_TEAMS" | jq -r '.[] | "  - " + .name + " (slug: " + .slug + ")"'
+        exit 1
+    fi
+    echo "✓ $name team: $slug"
+done
+
+# get repos using prefix
+get_repos() {
+    api "${GH_API}/orgs/${ORG}/repos?per_page=100&page=2" |
+    jq -r '.[].name' | 
+    awk -v prefix="$PREFIX" 'index($0,prefix)==1'
+}
 
 # create dev branch if missing
 create_development_branch() {
@@ -135,7 +127,6 @@ create_development_branch() {
         -d "{\"ref\":\"refs/heads/development\",\"sha\":\"${commit_sha}\"}" >/dev/null
     echo "  ✓ Created development branch"
 }
-
 
 # add bot as collaborator
 add_bot_collaborator() {
@@ -194,7 +185,6 @@ protect_branch() {
     echo "  ✓ Protected $branch ($approvals approvals required)"
 }
 
-
 # repository settings
 configure_repo_settings() {
     local repo="$1"
@@ -210,23 +200,6 @@ configure_repo_settings() {
     echo "  ✓ Repository settings configured"
 }
 
-# get repos using prefix
-get_repos() {
-    local page=1
-    local per_page=100
-    local all_repos="[]"
-    while :; do
-        local body
-        body=$(api "${GH_API}/orgs/${ORG}/repos?per_page=${per_page}&type=all&page=${page}")
-        if [[ "$(echo "$body" | jq 'length')" -eq 0 ]]; then
-            break
-        fi
-        all_repos=$(jq -s 'add' <(echo "$all_repos") <(echo "$body"))
-        ((page++))
-    done
-    echo "$all_repos" | jq -r '.[].name' | awk -v prefix="$PREFIX" 'index($0,prefix)==1'
-}
-
 # main
 repos=$(get_repos)
 [[ -z "$repos" ]] && { echo "No repositories found with prefix '$PREFIX'"; exit 0; }
@@ -238,14 +211,12 @@ echo
 
 while IFS= read -r repo; do
     echo "[$repo]"
-    create_development_branch "$repo"
-    add_bot_collaborator "$repo"
-    default_branch=$(api "${GH_API}/repos/${ORG}/${repo}" | jq -r '.default_branch')
-    protect_branch "$repo" "$default_branch" 2 "team:$DEVELOPERS" "team:$MAINTAINERS"
+    # create_development_branch "$repo"
+    # (grant access removed by request)
+    protect_branch "$repo" "master" 2 "team:$DEVELOPERS" "team:$MAINTAINERS"
     protect_branch "$repo" "development" 1 "team:$ADMINS" "user:$BOT_USER"
     configure_repo_settings "$repo"
     echo
 done <<< "$repos"
 
 echo "✓ All repositories configured successfully!"
-

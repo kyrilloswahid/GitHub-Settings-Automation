@@ -4,7 +4,7 @@ This script automates the configuration of GitHub repositories within an organiz
 - Ensures a `development` branch exists (creates it if missing)
 - Adds a specified bot user as a collaborator
 - Protects the `master` and `development` branches with review and status check requirements
-- Configures repository settings (e.g., enables auto-merge, disables merge commits)
+- Configures repository settings
 
 ## Settings Equivalence Table
 

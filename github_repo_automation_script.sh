@@ -213,7 +213,7 @@ while IFS= read -r repo; do
     echo "[$repo]"
     # create_development_branch "$repo"
     # (grant access removed by request)
-    protect_branch "$repo" "master" 2 "team:$DEVELOPERS" "team:$MAINTAINERS"
+    protect_branch "$repo" "main" 2 "team:$DEVELOPERS" "team:$MAINTAINERS"
     protect_branch "$repo" "development" 1 "team:$ADMINS" "user:$BOT_USER"
     configure_repo_settings "$repo"
     echo
